@@ -1,0 +1,28 @@
+{
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "hostRequirements": {
+        "cpus": 4
+    },
+    "waitFor": "onCreateCommand",
+    "postAttachCommand": {
+        "readme": "code README.md"
+    },
+    "customizations": {
+        "codespaces": {
+            "openFiles": []
+        },
+        "vscode": {
+            "extensions": [
+                "ms-toolsai.jupyter",
+                "ms-python.python"
+            ],
+            "settings": {
+                "workbench.editorAssociations": {
+                    "*.md": "vscode.markdown.preview.editor"
+                }
+            }
+        }
+    }
+}

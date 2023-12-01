@@ -1,5 +1,6 @@
 llm_download_cache
 env
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

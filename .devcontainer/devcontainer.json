@@ -3,7 +3,7 @@
         "dockerfile": "Dockerfile"
     },
     "hostRequirements": {
-        "cpus": 4
+        "cpus": 2
     },
     "waitFor": "onCreateCommand",
     "postAttachCommand": {

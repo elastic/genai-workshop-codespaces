@@ -1,9 +1,11 @@
 import os
 import streamlit as st
 import openai
+from openai import OpenAI
 from elasticsearch import Elasticsearch
 from string import Template
 import elasticapm
+
 
 # Configure OpenAI client
 openai.api_key = os.environ['OPENAI_API_KEY']
@@ -200,13 +202,15 @@ def chat_gpt(prompt, max_tokens=1024, max_context_tokens=4000, safety_margin=5, 
 
     # Make the right OpenAI call depending on the API we're using
     if(os.environ["ELASTIC_PROXY"] == "True"):
-      response = openai.ChatCompletion.create(model=openai.default_model,
+      client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+      response = client.chat.completions.create(model=openai.default_model,
                                               temperature=0,
                                               messages=[{"role": "system", "content": sys_content},
                                                         {"role": "user", "content": truncated_prompt}]
                                               )
     else:
-      response = openai.ChatCompletion.create(engine=openai.default_model,
+      client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+      response = client.chat.completions.create(engine=openai.default_model,
                                               temperature=0,
                                               messages=[{"role": "system", "content": sys_content},
                                                         {"role": "user", "content": truncated_prompt}]
@@ -216,12 +220,12 @@ def chat_gpt(prompt, max_tokens=1024, max_context_tokens=4000, safety_margin=5, 
     # APM: add metadata labels of data we want to capture
     elasticapm.label(model = openai.default_model)
     elasticapm.label(prompt = prompt)
-    elasticapm.label(total_tokens = response["usage"]["total_tokens"])
-    elasticapm.label(prompt_tokens = response["usage"]["prompt_tokens"])
-    elasticapm.label(response_tokens = response["usage"]["completion_tokens"])
+    elasticapm.label(total_tokens = response.usage.total_tokens)
+    elasticapm.label(prompt_tokens = response.usage.prompt_tokens)
+    elasticapm.label(response_tokens = response.usage.completion_tokens)
     if 'USER_HASH' in os.environ: elasticapm.label(user = os.environ['USER_HASH'])
 
-    return response["choices"][0]["message"]["content"]
+    return response.choices[0].message.content
 
 def toLLM(resp, url, usr_prompt, sys_prompt, neg_resp, show_prompt):
     prompt_template = Template(usr_prompt)

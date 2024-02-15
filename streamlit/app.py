@@ -1,6 +1,8 @@
 import os
 import streamlit as st
 import openai
+import tiktoken
+import secrets
 from openai import OpenAI
 from elasticsearch import Elasticsearch
 import elasticapm
@@ -104,13 +106,28 @@ st.markdown(
 
 ######################################
 
-# Configure OpenAI client
-openai.api_key = os.environ['OPENAI_API_KEY']
-openai.api_base = os.environ['OPENAI_API_BASE']
-openai.default_model = os.environ['OPENAI_API_ENGINE']
-openai.verify_ssl_certs = False
-client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+@st.cache_resource
+def initOpenAI():
+    #if using the Elastic AI proxy, then generate the correct API key
+    if os.environ['ELASTIC_PROXY'] == "True":
+        #generate and share "your" unique hash
+        os.environ['USER_HASH'] = secrets.token_hex(nbytes=6)
+        print(f"Your unique user hash is: {os.environ['USER_HASH']}")
+        #get the current API key and combine with your hash
+        os.environ['OPENAI_API_KEY'] = f"{os.environ['OPENAI_API_KEY']} {os.environ['USER_HASH']}"
+    else:
+        openai.api_type = os.environ['OPENAI_API_TYPE']
+        openai.api_version = os.environ['OPENAI_API_VERSION']
 
+    # Configure OpenAI client
+    openai.api_key = os.environ['OPENAI_API_KEY']
+    openai.api_base = os.environ['OPENAI_API_BASE']
+    openai.default_model = os.environ['OPENAI_API_ENGINE']
+    openai.verify_ssl_certs = False
+    client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+    return client
+
+openAIClient = initOpenAI()
 
 # Initialize Elasticsearch and APM clients
 # Configure APM and Elasticsearch clients
@@ -132,10 +149,6 @@ def initElastic():
             basic_auth=(os.environ['ELASTIC_USER'], os.environ['ELASTIC_PASSWORD']),
             request_timeout=30
         )
-
-    if os.environ['ELASTIC_PROXY'] != "True":
-        openai.api_type = os.environ['OPENAI_API_TYPE']
-        openai.api_version = os.environ['OPENAI_API_VERSION']
 
     return apmclient, es
 
@@ -446,6 +459,33 @@ def generate_response(query,
 
     return es_time, chat_response
 
+def count_tokens(messages, model="gpt-35-turbo"):
+    if "gpt-3.5-turbo" in model or "gpt-35-turbo" in model:
+        model = "gpt-3.5-turbo-0613"
+    elif "gpt-4" in model:
+        model="gpt-4-0613"
+
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        print("Warning: model not found. Using gpt-3.5-turbo-0613 encoding.")
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo-0613")
+
+    if isinstance(messages, str):
+        return len(encoding.encode(messages))
+    else:
+        tokens_per_message = 3
+        tokens_per_name = 1
+
+        num_tokens = 0
+        for message in messages:
+            num_tokens += tokens_per_message
+            for key, value in message.items():
+                num_tokens += len(encoding.encode(value))
+                if key == "name":
+                    num_tokens += tokens_per_name
+        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+        return num_tokens
 
 def chat_gpt(user_prompt, system_prompt):
     """
@@ -462,18 +502,22 @@ def chat_gpt(user_prompt, system_prompt):
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": truncated_prompt}]
 
-    # Add APM metadata and return the response content
-    elasticapm.set_custom_context({'model': openai.default_model, 'prompt': user_prompt})
-    # return response["choices"][0]["message"]["content"]
-
     full_response = ""
-    for response in client.chat.completions.create(
+    for response in openAIClient.chat.completions.create(
         model=openai.default_model,
         temperature=0,
         messages=messages,
         stream=True
     ):
         full_response += (response.choices[0].delta.content or "")
+
+    # APM: add metadata labels of data we want to capture
+    elasticapm.label(model = openai.default_model)
+    elasticapm.label(prompt = user_prompt)
+    elasticapm.label(prompt_tokens = count_tokens(messages, model=openai.default_model))
+    elasticapm.label(response_tokens = count_tokens(full_response, model=openai.default_model))
+    elasticapm.label(total_tokens = count_tokens(messages, model=openai.default_model) + count_tokens(full_response, model=openai.default_model))
+    if 'USER_HASH' in os.environ: elasticapm.label(user = os.environ['USER_HASH'])
 
     return full_response
 

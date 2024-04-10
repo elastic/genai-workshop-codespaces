@@ -8,6 +8,6 @@ Welome to this Elastic GenAI Workshop for Developers.  We'll be using Instruqt t
 ## To get started
 
 1. In the lefthand menu open the ```notebooks``` folder.
-2. Open the first lab ```genai_colab_lab1and2.ipynb```
+2. Open the lab ```90_minute_Workhop.ipynb```
 3. Follow the instructions on the right to select the .venv Python kernel.
 4. Complete step Zero of the notebook by hitting the play button on each code snippet in order.
